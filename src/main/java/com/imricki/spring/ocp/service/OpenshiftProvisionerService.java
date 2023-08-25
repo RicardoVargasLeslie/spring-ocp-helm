@@ -8,11 +8,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class OpenshiftProvisionerService implements OpenshiftProvisioner {
 
-
+    private final ProvisioningUtils provisioningUtils;
     @Autowired
-    private ProvisioningUtils provisioningUtils;
-
-
+    public OpenshiftProvisionerService(ProvisioningUtils provisioningUtils) {
+        this.provisioningUtils = provisioningUtils;
+    }
     @Override
     public void provisionResources(final NewApplicationEvent newApplicationEvent) {
 
