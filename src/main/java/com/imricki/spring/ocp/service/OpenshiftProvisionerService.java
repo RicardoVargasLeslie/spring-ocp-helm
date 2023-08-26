@@ -2,9 +2,11 @@ package com.imricki.spring.ocp.service;
 
 import com.imricki.spring.ocp.event.NewApplicationEvent;
 import com.imricki.spring.ocp.utils.ProvisioningUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class OpenshiftProvisionerService implements OpenshiftProvisioner {
 
@@ -19,24 +21,24 @@ public class OpenshiftProvisionerService implements OpenshiftProvisioner {
         // Extract application details from newApplication object
         String applicationName = newApplicationEvent.getApplicationName();
         String environment = newApplicationEvent.getEnvironment();
-
         // Define resource names and configurations based on application details
         String namespaceName = environment + "-" + applicationName;
-        // Create Namespace
+
+        log.info("Create Namespace...");
         provisioningUtils.createNamespace(namespaceName);
-        // Create Limits/Quotas
+        log.info("Create Limits/Quotas...");
         provisioningUtils.createLimitsAndQuotas(namespaceName);
-        // Create ServiceAccount
+        log.info("Create ServiceAccount...");
         provisioningUtils.createServiceAccount(namespaceName);
-        // Create RoleBindings
+        log.info("Create RoleBindings...");
         provisioningUtils.createRoleBindings(namespaceName);
-        // Create Secrets
+        log.info("Create Secrets...");
         provisioningUtils.createSecrets(namespaceName);
-        // Create NetworkPolicies
+        log.info("Create NetworkPolicies...");
         provisioningUtils.createNetworkPolicies(namespaceName);
-        // Execute Helm Chart
+        log.info("Execute Helm Chart...");
         provisioningUtils.executeHelmChart(namespaceName);
-        // Report results (logging, Kafka topic, API endpoint, etc.)
+        log.info("Report results (logging, Kafka topic, API endpoint, etc....");
         provisioningUtils.reportResults(namespaceName);
     }
 }

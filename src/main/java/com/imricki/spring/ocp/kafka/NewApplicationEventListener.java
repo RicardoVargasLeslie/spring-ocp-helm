@@ -12,10 +12,12 @@ public class NewApplicationEventListener {
     @Autowired
     OpenshiftProvisioner openshiftProvisioner;
 
-    @KafkaListener(topics = "new-application-topic", groupId = "consumer-1")
+    @KafkaListener(topics = "tp-application-topic", groupId = "consumer-1")
     public void listenToNewApplicationEvent(NewApplicationEvent newApplicationEvent) {
         // Process the Kafka message (NewApplication event)
         // You can trigger the namespace provisioning tasks here
+        System.out.println("Received message: " + newApplicationEvent.getApplicationName());
+        System.out.println("Recieved a Message: " + newApplicationEvent.getEnvironment());
         openshiftProvisioner.provisionResources(newApplicationEvent);
     }
 }
