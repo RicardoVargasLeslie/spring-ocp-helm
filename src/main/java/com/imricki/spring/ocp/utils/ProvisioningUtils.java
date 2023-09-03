@@ -1,37 +1,50 @@
 package com.imricki.spring.ocp.utils;
 
 import io.fabric8.kubernetes.api.model.*;
+import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
+import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyBuilder;
 import io.fabric8.kubernetes.api.model.rbac.RoleBinding;
 import io.fabric8.kubernetes.api.model.rbac.RoleBindingBuilder;
 import io.fabric8.kubernetes.api.model.rbac.RoleRefBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.ExecWatch;
+import io.fabric8.kubernetes.client.dsl.PodResource;
+import io.fabric8.kubernetes.client.dsl.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 public class ProvisioningUtils {
 
     private final KubernetesClient kubernetesClient;
+    private final OCPResources ocpResources;
+    private final NetworkPolicyLoader networkPolicyLoader;
 
     @Autowired
-    private OCPResources ocpResources;
-
-    @Autowired
-    public ProvisioningUtils(KubernetesClient kubernetesClient) {
+    public ProvisioningUtils(final KubernetesClient kubernetesClient, final OCPResources ocpResources, final NetworkPolicyLoader networkPolicyLoader) {
         this.kubernetesClient = kubernetesClient;
+        this.ocpResources = ocpResources;
+        this.networkPolicyLoader = networkPolicyLoader;
     }
 
     /*
-     Creates a new Kubernetes namespace with the provided name.
-     It uses the NamespaceBuilder to construct a new Namespace object
-     and then uses the Kubernetes client to create or replace the namespace in the cluster.
-    */
+         Creates a new Kubernetes namespace with the provided name.
+         It uses the NamespaceBuilder to construct a new Namespace object
+         and then uses the Kubernetes client to create or replace the namespace in the cluster.
+        */
     public void createNamespace(String namespaceName) {
 
         Namespace newNamespace = new Namespace();
@@ -61,7 +74,7 @@ public class ProvisioningUtils {
 
         LimitRange limitRange = new LimitRangeBuilder()
                 .withNewMetadata()
-                .withName("ot-limit-range") // Replace with a valid name
+                .withName(ocpResources.getLimitRangeName()) // Replace with a valid name
                 .endMetadata()
                 .withNewSpec()
                 .withLimits(limitRangeItem)
@@ -70,26 +83,22 @@ public class ProvisioningUtils {
 
         // Check if the LimitRange already exists by trying to get it
         LimitRange existingLimitRange = kubernetesClient.limitRanges().inNamespace(namespaceName)
-                .withName("ot-limit-range") // Replace with a valid name
+                .withName(ocpResources.getLimitRangeName()) // Replace with a valid name
                 .get();
 
         if (existingLimitRange != null) {
-            // LimitRange already exists, replace it
-            kubernetesClient.limitRanges().inNamespace(namespaceName)
-                    .withName("ot-limit-range") // Replace with a valid name
-                    .replace(limitRange);
-            System.out.println("LimitRange replaced successfully.");
+            log.info("LimitRange already exists");
         } else {
             // LimitRange does not exist, create it
             kubernetesClient.limitRanges().inNamespace(namespaceName)
                     .create(limitRange);
-            System.out.println("LimitRange created successfully.");
+            log.info("LimitRange created successfully.");
         }
 
         // Create ResourceQuota
         ResourceQuota resourceQuota = new ResourceQuotaBuilder()
                 .withNewMetadata()
-                .withName("ot-resource-quota") // Replace with a valid name
+                .withName(ocpResources.getResourceQuotaName()) // Replace with a valid name
                 .withNamespace(namespaceName)
                 .endMetadata()
                 .withNewSpec()
@@ -98,8 +107,18 @@ public class ProvisioningUtils {
                 .endSpec()
                 .build();
 
-        kubernetesClient.resourceQuotas().inNamespace(namespaceName)
-                .createOrReplace(resourceQuota);
+        ResourceQuota existingResourceQuota = kubernetesClient.resourceQuotas().inNamespace(namespaceName)
+                .withName(ocpResources.getResourceQuotaName())
+                .get();
+
+        if (existingResourceQuota != null) {
+            log.info("LimitRange already exists.");
+        } else {
+            // LimitRange does not exist, create it
+            kubernetesClient.resourceQuotas().inNamespace(namespaceName)
+                    .create(resourceQuota);
+            log.info("LimitRange created successfully.");
+        }
 
         log.info("ResourceQuota and LimitRange created successfully...");
     }
@@ -141,8 +160,18 @@ public class ProvisioningUtils {
                 .endSubject()
                 .build();
 
-        kubernetesClient.rbac().roleBindings().inNamespace(namespaceName).createOrReplace(roleBinding);
-        log.info("RoleBinding created successfully...");
+        RoleBinding existingBinding = kubernetesClient.rbac().roleBindings().inNamespace(namespaceName).createOrReplace(roleBinding);
+
+        if (existingBinding != null) {
+            // RoleBinding already exists
+            log.info("RoleBinding already exists");
+        } else {
+            // Secret does not exist, create it
+            kubernetesClient.rbac().roleBindings().inNamespace(namespaceName).create(roleBinding);
+            log.info("RoleBinding created successfully.");
+        }
+
+        log.info("RoleBinding Finished OK...");
     }
 
     /*
@@ -151,18 +180,35 @@ public class ProvisioningUtils {
      */
     public void createSecrets(String namespaceName) {
 
-        Secret secret = new SecretBuilder()
-                .withNewMetadata()
-                .withName(ocpResources.getSecretName())
-                .withNamespace(namespaceName)
-                .endMetadata()
-                .withType("Opaque") // Change this to the appropriate type if needed
-                .addToData(ocpResources.getSecretDataKey(), ocpResources.getSecretDataValue())
-                .build();
+        try {
+            // Encode the secret data to base64
+            String encodedSecretValue = Base64.getEncoder().encodeToString(ocpResources.getSecretDataValue().getBytes());
 
-        kubernetesClient.secrets().inNamespace(namespaceName).createOrReplace(secret);
+            Secret secret = new SecretBuilder()
+                    .withNewMetadata()
+                    .withName(ocpResources.getSecretName())
+                    .withNamespace(namespaceName)
+                    .endMetadata()
+                    .withType("Opaque") // Change this to the appropriate type if needed
+                    .addToData(ocpResources.getSecretDataKey(), encodedSecretValue)
+                    .build();
 
-        log.info("Secret created successfully...");
+            // Check if the Secret already exists by trying to get it
+            Secret existingSecret = kubernetesClient.secrets().inNamespace(namespaceName).withName(ocpResources.getSecretName()).get();
+            if (existingSecret != null) {
+                log.info("Secret already exists");
+            } else {
+                // Secret does not exist, create it
+                kubernetesClient.secrets().inNamespace(namespaceName).create(secret);
+                log.info("Secret created successfully.");
+            }
+
+            log.info("Secret created or replaced successfully...");
+        } catch (Exception e) {
+            log.error("Error creating or replacing Secret: " + e.getMessage());
+            log.error("StackTrace: " + Arrays.toString(e.getStackTrace()));
+
+        }
     }
 
     /*
@@ -170,55 +216,51 @@ public class ProvisioningUtils {
      Network policies are used to control and define communication between pods
      */
     public void createNetworkPolicies(String namespaceName) {
-        try {
-            Process process = new ProcessBuilder("kubectl", "apply", "-f", ocpResources.getNetworkPolicyYaml(),
-                    "--namespace=" + namespaceName)
-                    .start();
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println(line);
-            }
+        //REVISAR
+        Resource<NetworkPolicy> networkPolicyResource = kubernetesClient.network().networkPolicies().inNamespace(namespaceName)
+                .withName(ocpResources.getNetworkPolicy());
 
-            int exitCode = process.waitFor();
-            if (exitCode == 0) {
-                log.info("NetworkPolicy applied successfully...");
-            } else {
-                log.info("Failed to apply NetworkPolicy...");
-            }
-        } catch (IOException | InterruptedException e) {
-            log.error("There was a error creating Network Policy", e);
+        NetworkPolicy networkPolicy = new NetworkPolicyBuilder()
+                .withNewMetadata()
+                .withName("my-network-policy") // Replace with your desired name
+                .withNamespace(namespaceName)
+                .endMetadata()
+                .withNewSpec()
+                .addNewIngress()
+                .addNewFrom()
+                .withNewPodSelector()
+                .addToMatchLabels("network-key", "network-value") // Replace with your label selector
+                .endPodSelector()
+                .endFrom()
+                .addNewPort()
+                .withNewPort(80) // Replace with your desired port
+                .endPort()
+                .endIngress()
+                .endSpec()
+                .build();
+
+        if (networkPolicyResource != null) {
+            // NetworkPolicy already exists
+            log.info("NetworkPolicy already exists.");
+
+            kubernetesClient.network().networkPolicies().inNamespace(namespaceName)
+                    .withName("network-policy").createOrReplace(networkPolicy);
+        } else {
+            // NetworkPolicy does not exist, create it
+
+            kubernetesClient.network().networkPolicies().inNamespace(namespaceName)
+                    .create(networkPolicy);
+            log.info("NetworkPolicy created successfully.");
         }
+
     }
 
-    public void executeHelmChart(String namespaceName) {
+    public  void executeHelmChart(String namespaceName) {
 
-        final String HELM_COMMAND = "helm"; // Change this to the path of the Helm executable
-        final String HELM_CHART_NAME = "my-helm-chart"; // Change this to your Helm chart name
-
-        try {
-            Process process = new ProcessBuilder(
-                    HELM_COMMAND, "install", HELM_CHART_NAME,
-                    "--namespace", namespaceName
-            ).start();
-
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println(line);
-            }
-
-            int exitCode = process.waitFor();
-            if (exitCode == 0) {
-                log.info("Helm chart installation successful...");
-            } else {
-                log.info("Helm chart installation failed...");
-            }
-        } catch (Exception e) {
-            log.error("There was a executeHelmChart creation", e);
-        }
+        log.info("executeHelmChart");
     }
+
     public void reportResults(String namespaceName) {
         log.info("Report results (logging, Kafka topic, API endpoint, etc....");
     }

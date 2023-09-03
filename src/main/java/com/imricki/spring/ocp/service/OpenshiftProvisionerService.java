@@ -29,13 +29,13 @@ public class OpenshiftProvisionerService implements OpenshiftProvisioner {
         log.info("Create Limits/Quotas...");
         provisioningUtils.createLimitsAndQuotas(namespaceName);
         log.info("Create ServiceAccount...");
-        //provisioningUtils.createServiceAccount(namespaceName);
+        provisioningUtils.createServiceAccount(namespaceName);
         log.info("Create RoleBindings...");
-        //provisioningUtils.createRoleBindings(namespaceName);
+        provisioningUtils.createRoleBindings(namespaceName);
         log.info("Create Secrets...");
-        //provisioningUtils.createSecrets(namespaceName);
+        provisioningUtils.createSecrets(namespaceName);
         log.info("Create NetworkPolicies...");
-        //provisioningUtils.createNetworkPolicies(namespaceName);
+        provisioningUtils.createNetworkPolicies(namespaceName);
         log.info("Execute Helm Chart...");
         //provisioningUtils.executeHelmChart(namespaceName);
         log.info("Report results (logging, Kafka topic, API endpoint, etc....");

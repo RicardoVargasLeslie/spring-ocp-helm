@@ -1,0 +1,19 @@
+application-label-key: app
+application-label-value: ot-application-4
+cpu-limit: 500m
+limit-range-name: ot-range-name-4
+memory-limit: 512Mi
+resource-quota-name: ot-resource-quota-4
+role-name: ot-role-name-4
+secret-data-key: ot-secret-data-key-4
+secret-data-value: ot-secret-data-value-4
+secret-name: ot-secret-name-4
+service-account-name: ot-service-account-name-4
+network-policy: ot-network-policy-4
+network-key: ot-network-key
+network-value: ot-network-value
+
+###############################################
+openshift:
+    api:
+        url: http://localhost:8443

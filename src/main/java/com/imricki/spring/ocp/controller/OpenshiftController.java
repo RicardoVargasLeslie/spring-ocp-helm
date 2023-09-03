@@ -20,8 +20,8 @@ public class OpenshiftController {
     public ResponseEntity<?> provisionResources() {
 
         NewApplicationEvent event = new NewApplicationEvent();
-        event.setEnvironment("int");
-        event.setApplicationName("ricki");
+        event.setEnvironment("pre");
+        event.setApplicationName("realme");
 
         openshiftProvisioner.provisionResources(event);
 

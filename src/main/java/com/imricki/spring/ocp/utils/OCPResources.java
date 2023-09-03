@@ -33,7 +33,7 @@ public class OCPResources {
     private String serviceAccountName;
 
     @Value("${role-name}")
-    private  String roleName;
+    private String roleName;
 
     @Value("${secret-name}")
     private String secretName;
@@ -44,8 +44,14 @@ public class OCPResources {
     @Value("${secret-data-value}")
     private String secretDataValue;
 
-    @Value("${network-policy-yaml}")
-    private String networkPolicyYaml;
+    @Value("${network-policy}")
+    private String networkPolicy;
+
+    @Value("${network-key}")
+    private String networkKey;
+
+    @Value("${network-value}")
+    private String networkValue;
 
     private OCPResources() {
         // Private constructor to prevent instantiation
