@@ -67,29 +67,6 @@
 					</excludes>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.eclipse.jkube</groupId>
-				<artifactId>helm-maven-plugin</artifactId>
-				<version>1.0.0</version> <!-- Use the latest version -->
-				<executions>
-					<execution>
-						<goals>
-							<goal>helm</goal>
-						</goals>
-						<configuration>
-							<!-- Define your Helm chart source -->
-							<chart>
-								<location>classpath:/helm-charts</location>
-								<name>my-helm-chart</name>
-								<version>1.0.0</version>
-							</chart>
-							<!-- Set the release name and namespace -->
-							<releaseName>my-release</releaseName>
-							<namespace>my-namespace</namespace>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
 		</plugins>
 	</build>
 

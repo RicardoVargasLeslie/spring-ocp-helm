@@ -217,7 +217,6 @@ public class ProvisioningUtils {
      */
     public void createNetworkPolicies(String namespaceName) {
 
-        //REVISAR
         Resource<NetworkPolicy> networkPolicyResource = kubernetesClient.network().networkPolicies().inNamespace(namespaceName)
                 .withName(ocpResources.getNetworkPolicy());
 
@@ -256,9 +255,44 @@ public class ProvisioningUtils {
 
     }
 
-    public  void executeHelmChart(String namespaceName) {
+    public static void executeHelmChart(String namespaceName) {
 
-        log.info("executeHelmChart");
+/*            String releaseName = "my-helm-release"; // Change this to your desired release name
+            String chartName = "stable/nginx-ingress"; // Change this to your Helm chart name
+
+            // Check if Helm release already exists
+            HelmRelease existingRelease = kubernetesClient.customResources(HelmRelease.class)
+                    .inNamespace(namespaceName)
+                    .withName(releaseName)
+                    .get();
+
+            if (existingRelease != null) {
+                // Helm release already exists, perform an upgrade
+                HelmReleaseSpec spec = existingRelease.getSpec();
+                spec.setChart(chartName);
+                existingRelease.setSpec(spec);
+                kubernetesClient.customResources(HelmRelease.class)
+                        .inNamespace(namespaceName)
+                        .withName(releaseName)
+                        .edit()
+                        .replace(existingRelease);
+                System.out.println("Helm chart upgrade successful...");
+            } else {
+                // Helm release does not exist, create it
+                HelmRelease newRelease = new HelmReleaseBuilder()
+                        .withNewMetadata()
+                        .withName(releaseName)
+                        .withNamespace(namespaceName)
+                        .endMetadata()
+                        .withNewSpec()
+                        .withChart(chartName)
+                        .endSpec()
+                        .build();
+                kubernetesClient.customResources(HelmRelease.class)
+                        .inNamespace(namespaceName)
+                        .createOrReplace(newRelease);
+                System.out.println("Helm chart installation successful...");
+            }*/
     }
 
     public void reportResults(String namespaceName) {
