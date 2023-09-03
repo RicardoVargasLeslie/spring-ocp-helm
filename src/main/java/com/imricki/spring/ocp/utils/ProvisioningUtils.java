@@ -7,24 +7,20 @@ import io.fabric8.kubernetes.api.model.rbac.RoleRefBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 @Component
 public class ProvisioningUtils {
 
-    @Value("${openshift.api.url}") // Define this property in your application.properties or application.yml
-    private String openshiftApiUrl;
-
     private final KubernetesClient kubernetesClient;
+
+    @Autowired
+    private OCPResources ocpResources;
 
     @Autowired
     public ProvisioningUtils(KubernetesClient kubernetesClient) {
@@ -41,7 +37,7 @@ public class ProvisioningUtils {
         Namespace newNamespace = new Namespace();
         ObjectMeta metadata = new ObjectMeta();
         metadata.setName(namespaceName);
-        metadata.setLabels(Collections.singletonMap(OCPConstants.APPLICATION_LABEL_KEY, OCPConstants.APPLICATION_LABEL_VALUE));
+        metadata.setLabels(Collections.singletonMap(ocpResources.getApplicationLabelKey(), ocpResources.getApplicationLabelValue()));
         newNamespace.setMetadata(metadata);
         kubernetesClient.namespaces().createOrReplace(newNamespace);
         log.info("Namespace created successfully...");
@@ -54,13 +50,46 @@ public class ProvisioningUtils {
    */
     public void createLimitsAndQuotas(String namespaceName) {
 
-        Quantity cpuQuantity = new Quantity(OCPConstants.CPU_LIMIT);
-        Quantity memoryQuantity = new Quantity(OCPConstants.MEMORY_LIMIT);
+        Quantity cpuQuantity = new Quantity(ocpResources.getCpuLimit());
+        Quantity memoryQuantity = new Quantity(ocpResources.getMemoryLimit());
+
+        // Create or load your LimitRange object
+        LimitRangeItem limitRangeItem = new LimitRangeItem();
+        limitRangeItem.setType("Container");
+        limitRangeItem.setDefaultRequest(Collections.singletonMap("cpu", new Quantity(ocpResources.getCpuLimit())));
+        limitRangeItem.setDefault(Collections.singletonMap("cpu", new Quantity(ocpResources.getCpuLimit())));
+
+        LimitRange limitRange = new LimitRangeBuilder()
+                .withNewMetadata()
+                .withName("ot-limit-range") // Replace with a valid name
+                .endMetadata()
+                .withNewSpec()
+                .withLimits(limitRangeItem)
+                .endSpec()
+                .build();
+
+        // Check if the LimitRange already exists by trying to get it
+        LimitRange existingLimitRange = kubernetesClient.limitRanges().inNamespace(namespaceName)
+                .withName("ot-limit-range") // Replace with a valid name
+                .get();
+
+        if (existingLimitRange != null) {
+            // LimitRange already exists, replace it
+            kubernetesClient.limitRanges().inNamespace(namespaceName)
+                    .withName("ot-limit-range") // Replace with a valid name
+                    .replace(limitRange);
+            System.out.println("LimitRange replaced successfully.");
+        } else {
+            // LimitRange does not exist, create it
+            kubernetesClient.limitRanges().inNamespace(namespaceName)
+                    .create(limitRange);
+            System.out.println("LimitRange created successfully.");
+        }
 
         // Create ResourceQuota
         ResourceQuota resourceQuota = new ResourceQuotaBuilder()
                 .withNewMetadata()
-                .withName(OCPConstants.RESOURCE_QUOTA_NAME)
+                .withName("ot-resource-quota") // Replace with a valid name
                 .withNamespace(namespaceName)
                 .endMetadata()
                 .withNewSpec()
@@ -69,46 +98,20 @@ public class ProvisioningUtils {
                 .endSpec()
                 .build();
 
-        kubernetesClient.resourceQuotas().inNamespace(namespaceName).createOrReplace(resourceQuota);
-
-        // Create LimitRange
-        LimitRangeItem cpuLimitItem = new LimitRangeItemBuilder()
-                .withDefaultRequest(Collections.singletonMap("cpu", cpuQuantity))
-                .withMax(Collections.singletonMap("cpu", cpuQuantity))
-                .build();
-
-        LimitRangeItem memoryLimitItem = new LimitRangeItemBuilder()
-                .withDefaultRequest(Collections.singletonMap("memory", memoryQuantity))
-                .withMax(Collections.singletonMap("memory", memoryQuantity))
-                .build();
-
-        Map<String, String> labels = new HashMap<>();
-        labels.put(OCPConstants.APPLICATION_LABEL_KEY, OCPConstants.APPLICATION_LABEL_VALUE);
-
-        LimitRange limitRange = new LimitRangeBuilder()
-                .withNewMetadata()
-                .withName(OCPConstants.LIMIT_RANGE_NAME)
-                .withNamespace(namespaceName)
-                .withLabels(labels) // Set the labels here
-                .endMetadata()
-                .withNewSpec()
-                .withLimits(cpuLimitItem, memoryLimitItem)
-                .endSpec()
-                .build();
-
-        kubernetesClient.limitRanges().inNamespace(namespaceName).createOrReplace(limitRange);
+        kubernetesClient.resourceQuotas().inNamespace(namespaceName)
+                .createOrReplace(resourceQuota);
 
         log.info("ResourceQuota and LimitRange created successfully...");
     }
-
     /*
      This method creates a new Kubernetes service account within the given namespace.
      It uses the ServiceAccountBuilder to define and configure the service account.
     */
     public void createServiceAccount(String namespaceName) {
+
         ServiceAccount serviceAccount = new ServiceAccountBuilder()
                 .withNewMetadata()
-                .withName(OCPConstants.SERVICE_ACCOUNT_NAME)
+                .withName(ocpResources.getServiceAccountName())
                 .withNamespace(namespaceName)
                 .endMetadata()
                 .build();
@@ -125,16 +128,16 @@ public class ProvisioningUtils {
 
         RoleBinding roleBinding = new RoleBindingBuilder()
                 .withNewMetadata()
-                .withName("rolebinding-" + OCPConstants.SERVICE_ACCOUNT_NAME)
+                .withName("rolebinding-" + ocpResources.getServiceAccountName())
                 .withNamespace(namespaceName)
                 .endMetadata()
                 .withRoleRef(new RoleRefBuilder()
                         .withKind("Role") // This could also be "ClusterRole"
-                        .withName(OCPConstants.ROLE_NAME)
+                        .withName(ocpResources.getRoleName())
                         .build())
                 .addNewSubject()
                 .withKind("ServiceAccount")
-                .withName(OCPConstants.SERVICE_ACCOUNT_NAME)
+                .withName(ocpResources.getServiceAccountName())
                 .endSubject()
                 .build();
 
@@ -150,11 +153,11 @@ public class ProvisioningUtils {
 
         Secret secret = new SecretBuilder()
                 .withNewMetadata()
-                .withName(OCPConstants.SECRET_NAME)
+                .withName(ocpResources.getSecretName())
                 .withNamespace(namespaceName)
                 .endMetadata()
                 .withType("Opaque") // Change this to the appropriate type if needed
-                .addToData(OCPConstants.SECRET_DATA_KEY, OCPConstants.SECRET_DATA_VALUE)
+                .addToData(ocpResources.getSecretDataKey(), ocpResources.getSecretDataValue())
                 .build();
 
         kubernetesClient.secrets().inNamespace(namespaceName).createOrReplace(secret);
@@ -168,7 +171,7 @@ public class ProvisioningUtils {
      */
     public void createNetworkPolicies(String namespaceName) {
         try {
-            Process process = new ProcessBuilder("kubectl", "apply", "-f", OCPConstants.NETWORK_POLICY_YAML,
+            Process process = new ProcessBuilder("kubectl", "apply", "-f", ocpResources.getNetworkPolicyYaml(),
                     "--namespace=" + namespaceName)
                     .start();
 
